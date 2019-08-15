@@ -1,6 +1,8 @@
-
 import re
 import unicodedata
+import torch
+SOS_token = 0
+EOS_token = 1
 
 
 def normalizeString(s):
@@ -16,3 +18,19 @@ def unicodeToAscii(s):
         if unicodedata.category(c) != 'Mn'
     )
 
+
+
+def indexesFromSentence(lang, sentence):
+    return [lang.word2idx[word] for word in sentence.split(' ')]
+
+
+def tensorFromSentence(lang, sentence):
+    indexes = indexesFromSentence(lang, sentence)
+    indexes.append(EOS_token)
+    return torch.tensor(indexes, dtype=torch.long).view(-1, 1)
+
+
+def tensorsFromPair(pair, input_lang, output_lang):
+    input_tensor = tensorFromSentence(input_lang, pair[0])
+    target_tensor = tensorFromSentence(output_lang, pair[1])
+    return (input_tensor, target_tensor)

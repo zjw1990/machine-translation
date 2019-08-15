@@ -8,15 +8,15 @@ class Language():
         self.word2idx = {}
         self.word2count = {}
         self.idx2word = {'SOS':0, 'EOS':1}
-        self.idx_word = 2
+        self.voc_size = 2
 
     def add_word(self, word):
         
         if word not in self.word2idx:
-            self.word2idx[word] = self.idx_word
+            self.word2idx[word] = self.voc_size
             self.word2count[word] = 1
-            self.idx2word[self.idx_word] = word
-            self.idx_word += 1
+            self.idx2word[self.voc_size] = word
+            self.voc_size += 1
 
         else:
              self.word2count[word] += 1
@@ -28,11 +28,11 @@ class Language():
 
 
 
-def load_data(path):
+def load_data(path, num):
 
     with open(path) as f:
         lines = f.readlines()
-    pairs =[ [normalizeString(s) for s in l.split('\t')] for l in lines]
+    pairs =[ [normalizeString(s) for s in l.split('\t')] for l in lines[:num]]
 
     eng = Language('eng')
     fra = Language('Fra')
@@ -41,6 +41,6 @@ def load_data(path):
         eng.add_sentence(pair[0])
         fra.add_sentence(pair[1])
     
-    return eng, fra
+    return eng, fra, pairs
 
 
