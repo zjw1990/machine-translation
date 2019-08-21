@@ -5,7 +5,7 @@ import torch.optim as optim
 from load_data import load_data
 from preprocess import tensorFromSentence, tensorsFromPair, indexesFromSentence
 from encoder import Encoder
-from decoder import Decoder
+from decoder import AttentionDecoder
 import time
 import random
 import math
@@ -25,14 +25,14 @@ def timeSince(since, percent):
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
 # global parameters
-DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 SOS_token = 0
 EOS_token = 1
 START_TIME = time.time()
 
 # training parameters
 epochs = 75000
-learning_rate = 0.03
+learning_rate = 0.01
 hidden_size = 256
 
 # load data
@@ -46,10 +46,10 @@ print_loss_total = 0  # Reset every print_every
 plot_loss_total = 0  # Reset every plot_every
 
 # initial model 
-encoder = Encoder(input_lang.voc_size, hidden_size)
+encoder = Encoder(input_lang.voc_size, hidden_size).to(device)
 encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
 
-decoder = Decoder(hidden_size, output_lang.voc_size)
+decoder = AttentionDecoder(hidden_size, output_lang.voc_size, dropout_p = 0.1).to(device)
 decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
 # inital input, random choose a sentence from all data.
@@ -73,26 +73,27 @@ for epoch in range(1, epochs+1):
     target_length = target_tensor.size(0)
     
     ## build a tensor to contain all outputs for a sentence
-    encoder_outputs = torch.zeros(target_length, encoder.hidden_size)
+    encoder_hiddens = torch.zeros(input_length, encoder.hidden_size,device = device)
     ## initial loss
     loss = 0
     ## start put data into encoder rnn, forward
     for ei in range(input_length):
         # forwad for a single word
-        encoder_output, encoder_hidden = encoder.forward(input_tensor[ei], encoder_hidden) 
+        encoder_output, encoder_hidden = encoder.forward(input_tensor[ei], encoder_hidden)
+        encoder_hiddens[ei] = encoder_hidden[0, 0]
         #encoder_outputs[ei] = encoder_output[0, 0]
     
     
     # Decoder
     
     ## initial input, hidden of decoder rnn
-    decoder_input = torch.tensor([[SOS_token]])
+    decoder_input = torch.tensor([[SOS_token]], device = device)
     decoder_hidden = encoder_hidden
     ## initial dencoder grads
     decoder_optimizer.zero_grad()
     ## training decoder rnn
     for di in range(target_length):
-        decoder_output, decoder_hidden = decoder.forward(decoder_input, decoder_hidden)
+        decoder_output, decoder_hidden, attention = decoder.forward(decoder_input, encoder_hidden, encoder_hiddens)
         decoder_input =  target_tensor[di]  
         loss += loss_function(decoder_output, target_tensor[di])
         #print(decoder_input.item())
@@ -117,15 +118,20 @@ for epoch in range(1, epochs+1):
         print('%s (%d %d%%) %.4f' % (timeSince(START_TIME, epoch / epochs), epoch, epoch / epochs * 100, print_loss_avg))
 
 
-
-# evaluate
-# training_pairs = [tensorsFromPair(random.choice(pairs), input_lang, output_lang) for i in range(3)]
 training_pairs = []
+sentences_test = []
+# evaluate
+for i in range(3):
+    training_pair = random.choice(pairs)
+    sentences_test.append(training_pair)
+    training_tensor = tensorsFromPair(training_pair, input_lang, output_lang)
+    training_pairs.append(training_tensor)
 
-sentences = ['i m one of your students .','je suis l une de vos eleves .']
-print(sentences)
-training_pairs.append(tensorsFromPair(sentences, input_lang, output_lang))
 
+# training_pairs = [tensorsFromPair(random.choice(pairs), input_lang, output_lang) for i in range(3)]
+# sentences = ['i m one of your students .','je suis l une de vos eleves .']
+
+i = 0
 for sentence in training_pairs:
 
     # output_words, attentions = evaluate(encoder, decoder, pair[0])
@@ -135,24 +141,24 @@ for sentence in training_pairs:
 
     with torch.no_grad():
         # Read the sentence from the testing set. 
- 
+
         # Initial 
         input_length = input_tensor.size(0)
         target_length = target_tensor.size(0)
         encoder_hidden = encoder.init_hidden()
         # Encoder outputs
-        encoder_outputs = torch.zeros(target_length, encoder.hidden_size)
+        encoder_hiddens = torch.zeros(input_length, encoder.hidden_size, device= device)
         for ei in range(input_length):
             encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
+            encoder_hiddens[ei] += encoder_hidden[0, 0]
 
         
-        decoder_input = torch.tensor([[SOS_token]])  # SOS
+        decoder_input = torch.tensor([[SOS_token]], device = device)  # SOS
         decoder_hidden = encoder_hidden
         
         decoded_words = []
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder.forward(decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden, attentions = decoder.forward(decoder_input, decoder_hidden, encoder_hiddens)
             value, indice = decoder_output.data.topk(1)
             decoder_input = indice
             if indice.item() == EOS_token:
@@ -163,5 +169,12 @@ for sentence in training_pairs:
 
 
     output_sentence = ' '.join(decoded_words)
-    print('output', output_sentence)
+
+    print('input:   ', sentences_test[i][0])
+
+    print('output:   ', output_sentence)
+ 
+    print('target:   ', sentences_test[i][1])
+
     print('')
+    i = i+1

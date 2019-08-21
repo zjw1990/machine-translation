@@ -3,7 +3,7 @@ import unicodedata
 import torch
 SOS_token = 0
 EOS_token = 1
-
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 def normalizeString(s):
     s = unicodeToAscii(s.lower().strip())
@@ -27,7 +27,7 @@ def indexesFromSentence(lang, sentence):
 def tensorFromSentence(lang, sentence):
     indexes = indexesFromSentence(lang, sentence)
     indexes.append(EOS_token)
-    return torch.tensor(indexes, dtype=torch.long).view(-1, 1)
+    return torch.tensor(indexes, dtype=torch.long, device = device).view(-1, 1)
 
 
 def tensorsFromPair(pair, input_lang, output_lang):

@@ -28,11 +28,11 @@ class Language():
 
 
 
-def load_data(path, num):
+def load_data(path):
 
     with open(path) as f:
         lines = f.readlines()
-    pairs =[ [normalizeString(s) for s in l.split('\t')] for l in lines[:num]]
+    pairs =[[normalizeString(s) for s in l.split('\t')] for l in lines]
 
     eng = Language('eng')
     fra = Language('Fra')

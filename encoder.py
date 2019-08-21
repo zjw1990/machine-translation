@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class Encoder(nn.Module):
     # input_size: vocabulary size
@@ -14,7 +14,7 @@ class Encoder(nn.Module):
         self.gru = nn.GRU(hidden_size, hidden_size)
     
     def init_hidden(self):
-        return torch.zeros(1,1, self.hidden_size)
+        return torch.zeros(1,1, self.hidden_size, device = device)
     
 
     def forward(self, input, hidden):

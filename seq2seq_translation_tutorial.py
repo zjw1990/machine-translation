@@ -211,7 +211,7 @@ def readLangs(lang1, lang2, reverse=False):
     lines = open('data/%s-%s.txt' % (lang1, lang2), encoding='utf-8').read().strip().split('\n')
 
     # Split every line into pairs and normalize
-    pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines[:1000]]
+    pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
 
     # Reverse pairs, make Lang instances
     if reverse:
@@ -249,7 +249,7 @@ eng_prefixes = (
 def filterPair(p):
     return len(p[0].split(' ')) < MAX_LENGTH and \
         len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
+        p[0].startswith(eng_prefixes)
 
 
 def filterPairs(pairs):
@@ -279,7 +279,7 @@ def prepareData(lang1, lang2, reverse=False):
     return input_lang, output_lang, pairs
 
 
-input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
+input_lang, output_lang, pairs = prepareData('eng', 'fra', False)
 print(random.choice(pairs))
 
 
@@ -453,23 +453,31 @@ class AttnDecoderRNN(nn.Module):
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
 
-    def forward(self, input, hidden, encoder_outputs):
-        embedded = self.embedding(input).view(1, 1, -1)
-        embedded = self.dropout(embedded)
+    def forward(self, input, hidden, encoder_outputs): # input 1*1 encoder_outputs 10*256
+        
+        y = self.embedding(input).view(1, 1, -1) # embedding 1*1*256
+        y = self.dropout(y)
+        align_input = torch.cat((y[0], hidden[0]), 1) # 1*512
+        
+        e = self.attn(align_input) # e 1*10
+        
+        a = F.softmax(e, dim=1) # a 1*10
+        m = a.unsqueeze(0) # m 1*1*10
+        n = encoder_outputs.unsqueeze(0) # n 1*10*256
+        
+        c = torch.bmm(m,n) # c 1*1*256
 
-        attn_weights = F.softmax(
-            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
-        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
-                                 encoder_outputs.unsqueeze(0))
+        output = torch.cat((y[0], c[0]), 1) # 1*512
+        
+        
+        output = self.attn_combine(output) # 1*256
+        output = output.unsqueeze(0) # 1*1*256
+        output = F.relu(output) # 1*1*256
+        
+        output, hidden = self.gru(output, hidden) # hidden 1*1*256, output 1*1*256
 
-        output = torch.cat((embedded[0], attn_applied[0]), 1)
-        output = self.attn_combine(output).unsqueeze(0)
-
-        output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
-
-        output = F.log_softmax(self.out(output[0]), dim=1)
-        return output, hidden, attn_weights
+        output = F.log_softmax(self.out(output[0]), dim=1) # output 1*3050
+        return output, hidden, a
 
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)
@@ -553,8 +561,7 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
     loss = 0
 
     for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
+        encoder_output, encoder_hidden = encoder(input_tensor[ei], encoder_hidden)
         encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
